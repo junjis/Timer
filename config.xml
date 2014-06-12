@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<widget xmlns = "http://www.w3.org/ns/widgets"
+        xmlns:gap = "http://phonegap.com/ns/1.0"
+        id        = "com.github.junjis"
+        version   = "1.0.0">
+		
+	<preference name="phonegap-version" value="2.0.0" />
+	<preference name="orientation" value="portrait" />
+	
+    <name>Timer</name>
+    <description>App to track your time</description>
+    <author href="http://github.com/junjis" email="junswd@gmail.com">junjis</author>
+	<preference name="permissions" value="none" />
+</widget>
