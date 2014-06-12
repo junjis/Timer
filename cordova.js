@@ -1,5 +1,5 @@
-﻿// Platform: windows8
-// 3.1.0
+﻿// Platform: windowsphone
+// 3.3.0
 /*
  Licensed to the Apache Software Foundation (ASF) under one
  or more contributor license agreements.  See the NOTICE file
@@ -19,8 +19,11 @@
  under the License.
 */
 ;(function() {
-var CORDOVA_JS_BUILD_LABEL = '3.1.0';
+var CORDOVA_JS_BUILD_LABEL = '3.3.0';
 // file: lib/scripts/require.js
+
+/*jshint -W079 */
+/*jshint -W020 */
 
 var require,
     define;
@@ -31,7 +34,7 @@ var require,
         requireStack = [],
     // Map of module ID -> index into requireStack of modules currently being built.
         inProgressModules = {},
-        SEPERATOR = ".";
+        SEPARATOR = ".";
 
 
 
@@ -41,7 +44,7 @@ var require,
                 var resultantId = id;
                 //Its a relative path, so lop off the last portion and add the id (minus "./")
                 if (id.charAt(0) === ".") {
-                    resultantId = module.id.slice(0, module.id.lastIndexOf(SEPERATOR)) + SEPERATOR + id.slice(2);
+                    resultantId = module.id.slice(0, module.id.lastIndexOf(SEPARATOR)) + SEPARATOR + id.slice(2);
                 }
                 return require(resultantId);
             };
@@ -504,7 +507,7 @@ function include(parent, objects, clobber, merge) {
                 include(result, obj.children, clobber, merge);
             }
         } catch(e) {
-            utils.alert('Exception building cordova JS globals: ' + e + ' for key "' + key + '"');
+            utils.alert('Exception building Cordova JS globals: ' + e + ' for key "' + key + '"');
         }
     });
 }
@@ -789,11 +792,10 @@ module.exports = channel;
 
 });
 
-// file: lib/windows8/exec.js
+// file: lib/windowsphone/exec.js
 define("cordova/exec", function(require, exports, module) {
 
 var cordova = require('cordova');
-var commandProxy = require('cordova/windows8/commandProxy');
 
 /**
  * Execute a cordova command.  It is up to the native side whether this action
@@ -808,28 +810,69 @@ var commandProxy = require('cordova/windows8/commandProxy');
  * @param {String} service      The name of the service to use
  * @param {String} action       Action to be run in cordova
  * @param {String[]} [args]     Zero or more arguments to pass to the method
+
  */
+
 module.exports = function(success, fail, service, action, args) {
 
-    var proxy = commandProxy.get(service,action);
-    if(proxy) {
-        var callbackId = service + cordova.callbackId++;
-        // console.log("EXEC:" + service + " : " + action);
-        if (typeof success == "function" || typeof fail == "function") {
-            cordova.callbacks[callbackId] = {success:success, fail:fail};
-        }
-        try {
-            proxy(success, fail, args);
-        }
-        catch(e) {
-            console.log("Exception calling native with command :: " + service + " :: " + action  + " ::exception=" + e);
+    var callbackId = service + cordova.callbackId++;
+    if (typeof success == "function" || typeof fail == "function") {
+        cordova.callbacks[callbackId] = {success:success, fail:fail};
+    }
+    // generate a new command string, ex. DebugConsole/log/DebugConsole23/["wtf dude?"]
+    for(var n = 0; n < args.length; n++)
+    {
+        if(typeof args[n] !== "string")
+        {
+            args[n] = JSON.stringify(args[n]);
         }
     }
-    else {
-        fail && fail("Missing Command Error");
+    var command = service + "/" + action + "/" + callbackId + "/" + JSON.stringify(args);
+    // pass it on to Notify
+    try {
+        if(window.external) {
+            window.external.Notify(command);
+        }
+        else {
+            console.log("window.external not available :: command=" + command);
+        }
+    }
+    catch(e) {
+        console.log("Exception calling native with command :: " + command + " :: exception=" + e);
     }
 };
 
+
+});
+
+// file: lib/common/exec/proxy.js
+define("cordova/exec/proxy", function(require, exports, module) {
+
+
+// internal map of proxy function
+var CommandProxyMap = {};
+
+module.exports = {
+
+    // example: cordova.commandProxy.add("Accelerometer",{getCurrentAcceleration: function(successCallback, errorCallback, options) {...},...);
+    add:function(id,proxyObj) {
+        console.log("adding proxy for " + id);
+        CommandProxyMap[id] = proxyObj;
+        return proxyObj;
+    },
+
+    // cordova.commandProxy.remove("Accelerometer");
+    remove:function(id) {
+        var proxy = CommandProxyMap[id];
+        delete CommandProxyMap[id];
+        CommandProxyMap[id] = null;
+        return proxy;
+    },
+
+    get:function(service,action) {
+        return ( CommandProxyMap[service] ? CommandProxyMap[service][action] : null );
+    }
+};
 });
 
 // file: lib/common/init.js
@@ -1047,48 +1090,20 @@ exports.reset();
 
 });
 
-// file: lib/windows8/platform.js
+// file: lib/windowsphone/platform.js
 define("cordova/platform", function(require, exports, module) {
 
 module.exports = {
-    id: 'windows8',
-    bootstrap:function() {
+    id: 'windowsphone',
+    bootstrap: function() {
         var cordova = require('cordova'),
-            exec = require('cordova/exec'),
-            channel = cordova.require('cordova/channel'),
-            modulemapper = require('cordova/modulemapper');
+               exec = require('cordova/exec');
 
-        modulemapper.clobbers('cordova/windows8/commandProxy', 'cordova.commandProxy');
-        channel.onNativeReady.fire();
-
-        var onWinJSReady = function () {
-            var app = WinJS.Application;
-            var checkpointHandler = function checkpointHandler() {
-                cordova.fireDocumentEvent('pause');
-            };
-
-            var resumingHandler = function resumingHandler() {
-                cordova.fireDocumentEvent('resume');
-            };
-
-            app.addEventListener("checkpoint", checkpointHandler);
-            Windows.UI.WebUI.WebUIApplication.addEventListener("resuming", resumingHandler, false);
-            app.start();
-
+        // Inject a listener for the backbutton, and tell native to override the flag (true/false) when we have 1 or more, or 0, listeners
+        var backButtonChannel = cordova.addDocumentEventHandler('backbutton');
+        backButtonChannel.onHasSubscribersChange = function() {
+            exec(null, null, "CoreEvents", "overridebackbutton", [this.numHandlers == 1]);
         };
-
-        if (!window.WinJS) {
-            // <script src="//Microsoft.WinJS.1.0/js/base.js"></script>
-            var scriptElem = document.createElement("script");
-            scriptElem.src = "//Microsoft.WinJS.1.0/js/base.js";
-            scriptElem.addEventListener("load", onWinJSReady);
-            document.head.appendChild(scriptElem);
-
-            console.log("added WinJS ... ");
-        }
-        else {
-            onWinJSReady();
-        }
     }
 };
 
@@ -1218,8 +1233,8 @@ var anchorEl = document.createElement('a');
  * For relative URLs, converts them to absolute ones.
  */
 urlutil.makeAbsolute = function(url) {
-  anchorEl.href = url;
-  return anchorEl.href;
+    anchorEl.href = url;
+    return anchorEl.href;
 };
 
 });
@@ -1392,36 +1407,6 @@ function UUIDcreatePart(length) {
 }
 
 
-});
-
-// file: lib/windows8/windows8/commandProxy.js
-define("cordova/windows8/commandProxy", function(require, exports, module) {
-
-
-// internal map of proxy function
-var CommandProxyMap = {};
-
-module.exports = {
-
-    // example: cordova.commandProxy.add("Accelerometer",{getCurrentAcceleration: function(successCallback, errorCallback, options) {...},...);
-    add:function(id,proxyObj) {
-        console.log("adding proxy for " + id);
-        CommandProxyMap[id] = proxyObj;
-        return proxyObj;
-    },
-
-    // cordova.commandProxy.remove("Accelerometer");
-    remove:function(id) {
-        var proxy = CommandProxyMap[id];
-        delete CommandProxyMap[id];
-        CommandProxyMap[id] = null;
-        return proxy;
-    },
-
-    get:function(service,action) {
-        return ( CommandProxyMap[service] ? CommandProxyMap[service][action] : null );
-    }
-};
 });
 
 window.cordova = require('cordova');

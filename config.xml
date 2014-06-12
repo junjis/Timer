@@ -4,7 +4,7 @@
         id        = "com.github.junjis"
         version   = "1.0.0">
 		
-	<preference name="phonegap-version" value="3.1.0" />
+	<preference name="phonegap-version" value="3.3.0" />
 	<preference name="orientation" value="portrait" />
 	
     <name>Timer</name>
